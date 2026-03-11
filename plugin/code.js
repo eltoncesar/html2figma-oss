@@ -192,6 +192,18 @@ function applyBase(node, layer) {
         node.effects = [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 0.12 },
             offset: { x: 0, y: 2 }, radius: 8, spread: 0, visible: true, blendMode: 'NORMAL' }];
     }
+
+    // Borda (stroke)
+    if (layer.strokes && layer.strokes.length && layer.strokeWeight) {
+        try {
+            var sc = resolveColor(layer.strokes[0].color || layer.strokes[0]);
+            if (sc) {
+                node.strokes = [{ type: 'SOLID', color: sc }];
+                node.strokeWeight = layer.strokeWeight;
+                node.strokeAlign = 'INSIDE';
+            }
+        } catch(e) {}
+    }
 }
 
 function applyCorners(node, layer) {

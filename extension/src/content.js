@@ -1,24 +1,23 @@
-// Capturador próprio usando getComputedStyle — resolve CSS variables automaticamente
+// Capturador DOM com getComputedStyle — resolve CSS variables
+// v3: captura texto com filhos inline + cores primárias
 
 (function () {
-    var SKIP_TAGS = { SCRIPT:1, STYLE:1, NOSCRIPT:1, HEAD:1, META:1, LINK:1, TITLE:1, SVG:1, PATH:1 };
-    var MAX_DEPTH = 15;
-    var MIN_SIZE  = 2;
-
-    // ── Utilitários de cor ──────────────────────────────────────────────────
+    var SKIP_TAGS   = { SCRIPT:1, STYLE:1, NOSCRIPT:1, HEAD:1, META:1, LINK:1, TITLE:1 };
+    var INLINE_TAGS = { SPAN:1, STRONG:1, EM:1, B:1, I:1, A:1, SMALL:1, LABEL:1, ABBR:1, CODE:1, S:1, U:1 };
+    var TEXT_TAGS   = { P:1, H1:1, H2:1, H3:1, H4:1, H5:1, H6:1, LI:1, TD:1, TH:1,
+                        BUTTON:1, SPAN:1, LABEL:1, CAPTION:1, DT:1, DD:1, FIGCAPTION:1 };
+    var MAX_DEPTH   = 20;
+    var MIN_SIZE    = 1;
 
     function parseColor(str) {
         if (!str) return null;
         str = str.trim();
-        if (str === 'transparent' || str === 'none') return null;
-        if (str.indexOf('rgba') === 0) {
-            var m = str.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)/);
-            if (m && parseFloat(m[4]) < 0.01) return null; // totalmente transparente
-            if (m) return { r: parseInt(m[1])/255, g: parseInt(m[2])/255, b: parseInt(m[3])/255 };
-        }
-        if (str.indexOf('rgb') === 0) {
-            var m2 = str.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
-            if (m2) return { r: parseInt(m2[1])/255, g: parseInt(m2[2])/255, b: parseInt(m2[3])/255 };
+        if (str === 'transparent' || str === 'none' || str === '') return null;
+        var m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/);
+        if (m) {
+            var a = m[4] !== undefined ? parseFloat(m[4]) : 1;
+            if (a < 0.02) return null;
+            return { r: parseInt(m[1])/255, g: parseInt(m[2])/255, b: parseInt(m[3])/255 };
         }
         if (str.charAt(0) === '#') {
             var h = str.replace('#','');
@@ -31,7 +30,13 @@
 
     function pf(v) { return parseFloat(v) || 0; }
 
-    // ── Captura de nó ───────────────────────────────────────────────────────
+    // Verifica se todos os filhos element são inline
+    function hasOnlyInlineChildren(el) {
+        for (var i = 0; i < el.children.length; i++) {
+            if (!INLINE_TAGS[el.children[i].tagName]) return false;
+        }
+        return true;
+    }
 
     function captureNode(el, depth, scrollX, scrollY) {
         if (!el || el.nodeType !== 1) return null;
@@ -39,40 +44,43 @@
         if (depth > MAX_DEPTH) return null;
 
         var rect = el.getBoundingClientRect();
-        var w    = Math.round(rect.width);
-        var h    = Math.round(rect.height);
+        var w = Math.round(rect.width);
+        var h = Math.round(rect.height);
         if (w < MIN_SIZE || h < MIN_SIZE) return null;
 
-        var x = Math.round(rect.left + scrollX);
-        var y = Math.round(rect.top  + scrollY);
+        var x  = Math.round(rect.left + scrollX);
+        var y  = Math.round(rect.top  + scrollY);
         var cs = window.getComputedStyle(el);
-
-        // ── Nó SVG: captura como retângulo colorido ──
         var tag = el.tagName.toUpperCase();
+
+        // ── SVG (ícone) ──────────────────────────────────────────────────────
         if (tag === 'SVG') {
-            var fill = parseColor(cs.color) || { r: 0.5, g: 0.5, b: 0.5 };
+            var iconColor = parseColor(cs.color) || { r: 0.4, g: 0.4, b: 0.4 };
             return { type: 'RECTANGLE', name: 'icon', x: x, y: y, width: w, height: h,
-                fills: [{ type: 'SOLID', color: fill }],
-                topLeftRadius: 0, topRightRadius: 0, bottomRightRadius: 0, bottomLeftRadius: 0 };
+                fills: [{ type: 'SOLID', color: iconColor }],
+                topLeftRadius: 2, topRightRadius: 2, bottomRightRadius: 2, bottomLeftRadius: 2 };
         }
 
-        // ── Nó IMG ──
+        // ── IMG ──────────────────────────────────────────────────────────────
         if (tag === 'IMG') {
             return { type: 'RECTANGLE', name: el.alt || 'image', x: x, y: y, width: w, height: h,
                 fills: [{ type: 'SOLID', color: { r: 0.88, g: 0.88, b: 0.88 } }],
                 topLeftRadius: 0, topRightRadius: 0, bottomRightRadius: 0, bottomLeftRadius: 0 };
         }
 
-        // ── Nó de texto puro (sem filhos element) ──
-        if (el.children.length === 0) {
-            var text = (el.textContent || '').trim();
+        // ── Texto: sem filhos OU tag de texto com apenas filhos inline ───────
+        var isTextLike = TEXT_TAGS[tag] && hasOnlyInlineChildren(el);
+        var isLeafText = el.children.length === 0;
+
+        if (isLeafText || isTextLike) {
+            var text = (el.innerText || el.textContent || '').trim();
             if (!text) return null;
 
-            var color = parseColor(cs.color) || { r: 0.1, g: 0.1, b: 0.1 };
-            var fw    = parseInt(cs.fontWeight) || 400;
+            var textColor = parseColor(cs.color) || { r: 0.1, g: 0.1, b: 0.1 };
+            var fw = parseInt(cs.fontWeight) || 400;
             return {
                 type:       'TEXT',
-                name:       text.slice(0, 30),
+                name:       text.slice(0, 40),
                 x:          x,
                 y:          y,
                 width:      w,
@@ -81,33 +89,31 @@
                 fontSize:   pf(cs.fontSize),
                 fontWeight: fw,
                 fontFamily: cs.fontFamily,
-                fills:      [{ type: 'SOLID', color: color, opacity: 1 }],
-                lineHeight: { unit: 'PIXELS', value: pf(cs.lineHeight) || pf(cs.fontSize) * 1.2 },
+                fills:      [{ type: 'SOLID', color: textColor, opacity: 1 }],
+                lineHeight: { unit: 'PIXELS', value: pf(cs.lineHeight) || pf(cs.fontSize) * 1.4 },
                 constraints: { horizontal: 'SCALE', vertical: 'MIN' }
             };
         }
 
-        // ── Frame / container ──
+        // ── Frame / container ────────────────────────────────────────────────
         var node = {
-            type:        'FRAME',
-            name:        tag.toLowerCase() + (el.id ? '#'+el.id : ''),
-            x:           x,
-            y:           y,
-            width:       w,
-            height:      h,
-            clipsContent: cs.overflow === 'hidden',
-            backgrounds: [],
-            children:    [],
-            constraints: { horizontal: 'SCALE', vertical: 'MIN' }
+            type:         'FRAME',
+            name:         tag.toLowerCase() + (el.id ? '#'+el.id : ''),
+            x:            x,
+            y:            y,
+            width:        w,
+            height:       h,
+            clipsContent: cs.overflow === 'hidden' || cs.overflow === 'clip',
+            backgrounds:  [],
+            children:     [],
+            constraints:  { horizontal: 'SCALE', vertical: 'MIN' }
         };
 
-        // Cor de fundo (getComputedStyle resolve CSS vars)
+        // Cor de fundo resolvida
         var bgColor = parseColor(cs.backgroundColor);
-        if (bgColor) {
-            node.backgrounds = [{ type: 'SOLID', color: bgColor }];
-        }
+        if (bgColor) node.backgrounds = [{ type: 'SOLID', color: bgColor }];
 
-        // Border radius por canto
+        // Border radius
         node.topLeftRadius     = pf(cs.borderTopLeftRadius);
         node.topRightRadius    = pf(cs.borderTopRightRadius);
         node.bottomRightRadius = pf(cs.borderBottomRightRadius);
@@ -117,8 +123,13 @@
         var op = parseFloat(cs.opacity);
         if (!isNaN(op) && op < 1) node.opacity = op;
 
-        // Sombra
-        if (cs.boxShadow && cs.boxShadow !== 'none') node.boxShadow = cs.boxShadow;
+        // Borda visível → adiciona como fill de borda (simplificado)
+        var borderColor = parseColor(cs.borderColor);
+        var borderWidth = pf(cs.borderWidth);
+        if (borderColor && borderWidth > 0) {
+            node.strokes = [{ type: 'SOLID', color: borderColor }];
+            node.strokeWeight = borderWidth;
+        }
 
         // Filhos
         for (var i = 0; i < el.children.length; i++) {
@@ -126,14 +137,10 @@
             if (child) node.children.push(child);
         }
 
-        // Se frame sem fundo e sem filhos visíveis, descarta
-        if (!bgColor && node.children.length === 0) return null;
-
         return node;
     }
 
-    // ── Execução ────────────────────────────────────────────────────────────
-
+    // ── Main ─────────────────────────────────────────────────────────────────
     try {
         chrome.runtime.sendMessage({ action: 'capture_start' });
 
@@ -170,7 +177,6 @@
         URL.revokeObjectURL(url);
 
         chrome.runtime.sendMessage({ action: 'capture_done', filename: filename });
-
     } catch (err) {
         chrome.runtime.sendMessage({ action: 'capture_error', error: err.message });
     }
