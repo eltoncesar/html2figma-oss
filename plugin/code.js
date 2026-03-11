@@ -198,10 +198,12 @@ function applyBase(node, layer) {
         try { node.constraints = layer.constraints; } catch (e) {}
     }
 
-    // Sombra
+    // Sombra — parseia o valor real do CSS box-shadow
     if (layer.boxShadow && layer.boxShadow !== 'none') {
-        node.effects = [{ type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 0.12 },
-            offset: { x: 0, y: 2 }, radius: 8, spread: 0, visible: true, blendMode: 'NORMAL' }];
+        var shadow = parseBoxShadow(layer.boxShadow);
+        if (shadow) {
+            try { node.effects = [shadow]; } catch(e) {}
+        }
     }
 
     // Borda (stroke)
@@ -209,9 +211,9 @@ function applyBase(node, layer) {
         try {
             var sc = resolveColor(layer.strokes[0].color || layer.strokes[0]);
             if (sc) {
-                node.strokes = [{ type: 'SOLID', color: sc }];
+                node.strokes      = [{ type: 'SOLID', color: sc }];
                 node.strokeWeight = layer.strokeWeight;
-                node.strokeAlign = 'INSIDE';
+                node.strokeAlign  = layer.strokeAlign || 'INSIDE';
             }
         } catch(e) {}
     }
@@ -283,4 +285,30 @@ function resolveColor(c) {
 function num(v, fallback) {
     var n = parseFloat(v);
     return isNaN(n) ? (fallback !== undefined ? fallback : 0) : n;
+}
+
+// Parseia CSS box-shadow string → objeto Figma DROP_SHADOW
+// Browsers colocam a cor PRIMEIRO no valor computado:
+// "rgba(0, 0, 0, 0.1) 0px 4px 6px -1px, ..."
+function parseBoxShadow(shadow) {
+    if (!shadow || shadow === 'none') return null;
+    // Extrai: cor + offsetX + offsetY + blur + (spread opcional)
+    var m = shadow.match(
+        /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)\s+([-\d.]+)px\s+([-\d.]+)px\s+([\d.]+)px(?:\s+([-\d.]+)px)?/
+    );
+    if (!m) {
+        // Fallback genérico
+        return { type: 'DROP_SHADOW', color: { r: 0, g: 0, b: 0, a: 0.1 },
+            offset: { x: 0, y: 2 }, radius: 6, spread: 0, visible: true, blendMode: 'NORMAL' };
+    }
+    return {
+        type:      'DROP_SHADOW',
+        color:     { r: parseFloat(m[1]) / 255, g: parseFloat(m[2]) / 255,
+                     b: parseFloat(m[3]) / 255, a: m[4] ? parseFloat(m[4]) : 1 },
+        offset:    { x: parseFloat(m[5]), y: parseFloat(m[6]) },
+        radius:    parseFloat(m[7]),
+        spread:    m[8] ? parseFloat(m[8]) : 0,
+        visible:   true,
+        blendMode: 'NORMAL'
+    };
 }

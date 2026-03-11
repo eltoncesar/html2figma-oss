@@ -101,12 +101,19 @@
         var op = parseFloat(cs.opacity);
         if (!isNaN(op) && op < 1) node.opacity = op;
 
-        // Borda
-        var bColor = getRgb(cs.borderTopColor || cs.borderColor);
-        var bWidth = pf(cs.borderTopWidth || cs.borderWidth);
-        if (bColor && bWidth > 0.5) {
+        // Borda — verifica todos os 4 lados, prioriza o mais significativo
+        var bColor = getRgb(cs.borderBottomColor) || getRgb(cs.borderTopColor) || getRgb(cs.borderColor);
+        var bWidth = pf(cs.borderBottomWidth) || pf(cs.borderTopWidth) || pf(cs.borderWidth);
+        if (bColor && bWidth > 0.3) {
             node.strokes      = [{ type: 'SOLID', color: bColor }];
             node.strokeWeight = bWidth;
+            node.strokeAlign  = 'INSIDE';
+        }
+
+        // Box shadow → passa raw para o plugin parsear
+        var shadow = cs.boxShadow;
+        if (shadow && shadow !== 'none') {
+            node.boxShadow = shadow;
         }
 
         // Filhos (apenas elementos — texto é capturado na Fase 2)
