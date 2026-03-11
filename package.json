@@ -1,0 +1,16 @@
+{
+    "name": "html2figma-oss",
+    "version": "1.0.0",
+    "description": "Open source Chrome extension + Figma plugin to import any website as editable Figma nodes",
+    "license": "MIT",
+    "scripts": {
+        "build": "node build.js",
+        "watch": "node build.js --watch"
+    },
+    "dependencies": {
+        "@builder.io/html-to-figma": "^0.3.1"
+    },
+    "devDependencies": {
+        "esbuild": "^0.20.0"
+    }
+}

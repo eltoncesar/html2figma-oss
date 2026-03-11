@@ -1,0 +1,35 @@
+{
+    "manifest_version": 3,
+    "name": "html2figma — Import any site to Figma",
+    "version": "1.0.0",
+    "description": "Capture any website and import as editable Figma nodes. Free and open source.",
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage",
+        "downloads"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "src/background.js"
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [],
+    "web_accessible_resources": [
+        {
+            "resources": ["dist/content.bundle.js"],
+            "matches": ["<all_urls>"]
+        }
+    ]
+}

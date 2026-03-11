@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 12px;
+            color: #333;
+            background: #fff;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 220px;
+        }
+
+        h2 { font-size: 14px; font-weight: 600; }
+
+        p { color: #666; line-height: 1.5; }
+
+        .drop-zone {
+            border: 2px dashed #d0d0d0;
+            border-radius: 8px;
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            color: #888;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: #7c3aed;
+            background: #f5f0ff;
+            color: #7c3aed;
+        }
+
+        .drop-zone input { display: none; }
+
+        .drop-icon { font-size: 28px; margin-bottom: 8px; }
+
+        .btn {
+            background: #7c3aed;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .btn:hover { background: #6d28d9; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        .status {
+            font-size: 11px;
+            color: #888;
+            text-align: center;
+            min-height: 14px;
+        }
+
+        .status.success { color: #22c55e; }
+        .status.error   { color: #ef4444; }
+        .status.loading { color: #f97316; }
+    </style>
+</head>
+<body>
+    <h2>html2figma</h2>
+    <p>Importe o arquivo <code>.json</code> gerado pela extensão Chrome para criar nós editáveis no Figma.</p>
+
+    <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".json" />
+        <div class="drop-icon">📂</div>
+        <div>Arraste o arquivo JSON aqui<br /><small>ou clique para selecionar</small></div>
+    </div>
+
+    <button class="btn" id="btnImport" disabled>Importar para o Figma</button>
+
+    <div class="status" id="status">Aguardando arquivo...</div>
+
+    <script>
+        const dropZone  = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const btnImport = document.getElementById('btnImport');
+        const statusEl  = document.getElementById('status');
+
+        let parsedData = null;
+
+        // Clique na drop zone abre o seletor de arquivo
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // Drag & drop visual
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) readFile(file);
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files[0]) readFile(fileInput.files[0]);
+        });
+
+        function readFile(file) {
+            if (!file.name.endsWith('.json')) {
+                setStatus('Arquivo inválido. Use um .json gerado pela extensão.', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    parsedData = JSON.parse(e.target.result);
+                    dropZone.querySelector('div:last-child').innerHTML =
+                        `✓ <strong>${file.name}</strong><br/><small>${(file.size / 1024).toFixed(1)} KB</small>`;
+                    btnImport.disabled = false;
+                    setStatus(`Arquivo carregado: ${parsedData.meta?.title || file.name}`, 'success');
+                } catch {
+                    setStatus('Erro ao ler o arquivo JSON.', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        btnImport.addEventListener('click', () => {
+            if (!parsedData) return;
+            btnImport.disabled = true;
+            setStatus('Importando para o Figma...', 'loading');
+            parent.postMessage({ pluginMessage: { type: 'import', data: parsedData } }, '*');
+        });
+
+        // Recebe resposta do code.js
+        window.onmessage = (event) => {
+            const msg = event.data.pluginMessage;
+            if (!msg) return;
+
+            if (msg.type === 'done') {
+                setStatus(`✓ ${msg.count} nós criados com sucesso!`, 'success');
+                btnImport.disabled = false;
+            }
+            if (msg.type === 'error') {
+                setStatus(`Erro: ${msg.error}`, 'error');
+                btnImport.disabled = false;
+            }
+        };
+
+        function setStatus(text, type = '') {
+            statusEl.textContent = text;
+            statusEl.className = `status ${type}`;
+        }
+    </script>
+</body>
+</html>
