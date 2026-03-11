@@ -1,4 +1,4 @@
-// Lógica do popup da extensão — modo screenshot
+// Lógica do popup da extensão
 
 const btnCapture = document.getElementById('btnCapture');
 const statusEl   = document.getElementById('status');
@@ -9,27 +9,33 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     urlEl.textContent = tabs[0] ? tabs[0].url : '—';
 });
 
+// Escuta mensagens vindas do content script
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'capture_start') {
+        setStatus('Capturando página...', 'loading');
+    }
+    if (message.action === 'capture_done') {
+        setStatus('✓ ' + message.filename, 'success');
+        btnCapture.disabled = false;
+        btnCapture.innerHTML = '<span>⬡</span> Capturar novamente';
+    }
+    if (message.action === 'capture_error') {
+        setStatus('Erro: ' + message.error, 'error');
+        btnCapture.disabled = false;
+    }
+});
+
 // Clique no botão de captura
 btnCapture.addEventListener('click', () => {
     btnCapture.disabled = true;
-    setStatus('Capturando página... não feche esta janela', 'loading');
+    setStatus('Iniciando captura...', 'loading');
 
-    chrome.runtime.sendMessage({ action: 'capture_screenshot' }, (response) => {
-        if (chrome.runtime.lastError) {
-            setStatus('Erro: ' + chrome.runtime.lastError.message, 'error');
+    chrome.runtime.sendMessage({ action: 'capture' }, (response) => {
+        if (chrome.runtime.lastError || (response && response.error)) {
+            const msg = (chrome.runtime.lastError && chrome.runtime.lastError.message) || (response && response.error);
+            setStatus('Erro: ' + msg, 'error');
             btnCapture.disabled = false;
-            return;
         }
-
-        if (!response || !response.ok) {
-            setStatus('Erro: ' + (response ? response.error : 'sem resposta'), 'error');
-            btnCapture.disabled = false;
-            return;
-        }
-
-        setStatus('✓ ' + response.filename + ' baixado!', 'success');
-        btnCapture.disabled = false;
-        btnCapture.innerHTML = '<span>⬡</span> Capturar novamente';
     });
 });
 

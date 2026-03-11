@@ -1,46 +1,9 @@
 // Plugin Figma — code.js
 // Suporta o formato BuilderIO/html-to-figma E o formato do nosso capturador próprio
 
-figma.showUI(__html__, { width: 340, height: 300, title: 'html2figma' });
+figma.showUI(__html__, { width: 320, height: 260, title: 'html2figma' });
 
 figma.ui.onmessage = function (msg) {
-    // ── Importar screenshot PNG ────────────────────────────────────────────────
-    if (msg.type === 'import_image') {
-        try {
-            var bytes  = new Uint8Array(msg.bytes);
-            var image  = figma.createImage(bytes);
-            var frame  = figma.createFrame();
-            frame.name = 'Página Capturada';
-            frame.x    = Math.round(figma.viewport.bounds.x + 100);
-            frame.y    = Math.round(figma.viewport.bounds.y + 100);
-
-            // Lê as dimensões reais da imagem
-            var imgSize = image.getSizeAsync
-                ? image.getSizeAsync()
-                : Promise.resolve({ width: 1440, height: 900 });
-
-            imgSize.then(function(size) {
-                frame.resize(size.width || 1440, size.height || 900);
-                frame.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' }];
-                frame.clipsContent = true;
-                figma.currentPage.appendChild(frame);
-                figma.viewport.scrollAndZoomIntoView([frame]);
-                figma.ui.postMessage({ type: 'done' });
-            }).catch(function() {
-                // Fallback sem dimensões
-                frame.resize(1440, 900);
-                frame.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' }];
-                figma.currentPage.appendChild(frame);
-                figma.viewport.scrollAndZoomIntoView([frame]);
-                figma.ui.postMessage({ type: 'done' });
-            });
-        } catch (err) {
-            figma.ui.postMessage({ type: 'error', error: String(err) });
-        }
-        return;
-    }
-
-    // ── Importar JSON (nós editáveis) ─────────────────────────────────────────
     if (msg.type !== 'import') return;
     run(msg.data).catch(function (err) {
         figma.ui.postMessage({ type: 'error', error: String(err) });
@@ -167,28 +130,16 @@ async function loadFont(family, style) {
 }
 
 async function buildText(layer) {
-    var text = figma.createText();
+    var chars = String(layer.characters || layer.value || layer.text || '').trim();
+    if (!chars) return null;
 
-    // 1. Carrega Inter como base garantida
-    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-
-    // 2. Posição
-    text.name = layer.name || 'text';
-    text.x    = Math.round(num(layer.x, 0));
-    text.y    = Math.round(num(layer.y, 0));
-
-    // 3. Define o conteúdo com a fonte padrão já carregada
-    var chars = String(layer.characters || layer.value || layer.text || '');
-    text.characters = chars;
-    if (!chars) return text;
-
-    // 4. Tenta aplicar a fonte original via range API
+    // 1. Determina a fonte — tenta a original, cai em Inter Regular
     var raw    = layer.fontFamily || 'Inter';
     var family = raw.split(',')[0].trim().replace(/['"]/g, '') || 'Inter';
     var weight = parseInt(layer.fontWeight || 400) || 400;
     var style  = weight >= 700 ? 'Bold' : weight >= 600 ? 'SemiBold' : weight >= 500 ? 'Medium' : 'Regular';
 
-    var loaded = { family: 'Inter', style: 'Regular' };
+    var font = { family: 'Inter', style: 'Regular' };
     var candidates = [
         { family: family, style: style },
         { family: family, style: 'Regular' },
@@ -196,22 +147,31 @@ async function buildText(layer) {
         { family: 'Inter', style: 'Regular' }
     ];
     for (var i = 0; i < candidates.length; i++) {
-        try { await figma.loadFontAsync(candidates[i]); loaded = candidates[i]; break; } catch(e) {}
+        try { await figma.loadFontAsync(candidates[i]); font = candidates[i]; break; } catch(e) {}
     }
 
-    // 5. Aplica fonte e tamanho via range (mais estável que os setters globais)
-    try { text.setRangeFontName(0, chars.length, loaded); } catch(e) {}
-    try { text.setRangeFontSize(0, chars.length, num(layer.fontSize, 14)); } catch(e) {}
+    var text = figma.createText();
 
-    // 6. Opacidade
-    if (layer.opacity != null) text.opacity = Math.min(1, Math.max(0, num(layer.opacity, 1)));
+    // 2. ORDEM CRÍTICA: fontName → characters → fontSize
+    //    Setar fontName DEPOIS de characters apaga o texto
+    text.fontName   = font;
+    text.characters = chars;
+    text.fontSize   = Math.max(8, num(layer.fontSize, 14));
 
-    // 7. Cor
+    // 3. Posição e nome
+    text.name = layer.name || chars.slice(0, 40);
+    text.x    = Math.round(num(layer.x, 0));
+    text.y    = Math.round(num(layer.y, 0));
+
+    // 4. Cor
     var color = null;
     if (layer.fills && layer.fills.length) color = resolveColor(layer.fills[0].color || layer.fills[0]);
     if (!color) color = resolveColor(layer.color);
     if (!color) color = { r: 0.1, g: 0.1, b: 0.1 };
     text.fills = [{ type: 'SOLID', color: color }];
+
+    // 5. Opacidade
+    if (layer.opacity != null) text.opacity = Math.min(1, Math.max(0, num(layer.opacity, 1)));
 
     return text;
 }

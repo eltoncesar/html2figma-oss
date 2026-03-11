@@ -14,33 +14,12 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            min-height: 240px;
+            min-height: 220px;
         }
 
         h2 { font-size: 14px; font-weight: 600; }
 
         p { color: #666; line-height: 1.5; }
-
-        .tabs {
-            display: flex;
-            gap: 0;
-            border-bottom: 2px solid #e5e5e5;
-        }
-
-        .tab {
-            padding: 6px 14px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #888;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-        }
-
-        .tab.active {
-            color: #7c3aed;
-            border-bottom-color: #7c3aed;
-        }
 
         .drop-zone {
             border: 2px dashed #d0d0d0;
@@ -62,12 +41,6 @@
         .drop-zone input { display: none; }
 
         .drop-icon { font-size: 28px; margin-bottom: 8px; }
-
-        .hint {
-            font-size: 10px;
-            color: #aaa;
-            text-align: center;
-        }
 
         .btn {
             background: #7c3aed;
@@ -98,19 +71,13 @@
 </head>
 <body>
     <h2>html2figma</h2>
-
-    <div class="tabs">
-        <div class="tab active" id="tabPng" onclick="switchTab('png')">📷 Screenshot (PNG)</div>
-        <div class="tab" id="tabJson" onclick="switchTab('json')">🔧 DOM (JSON)</div>
-    </div>
+    <p>Importe o arquivo <code>.json</code> gerado pela extensão Chrome para criar nós editáveis no Figma.</p>
 
     <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" accept=".png,.json" />
-        <div class="drop-icon" id="dropIcon">🖼️</div>
-        <div id="dropLabel">Arraste o arquivo PNG aqui<br /><small>ou clique para selecionar</small></div>
+        <input type="file" id="fileInput" accept=".json" />
+        <div class="drop-icon">📂</div>
+        <div id="dropLabel">Arraste o arquivo JSON aqui<br /><small>ou clique para selecionar</small></div>
     </div>
-
-    <div class="hint" id="hintText">Screenshot gerado pela extensão Chrome → importa como frame de imagem fiel ao site</div>
 
     <button class="btn" id="btnImport" disabled>Importar para o Figma</button>
 
@@ -121,42 +88,12 @@
         var fileInput = document.getElementById('fileInput');
         var btnImport = document.getElementById('btnImport');
         var statusEl  = document.getElementById('status');
-        var dropIcon  = document.getElementById('dropIcon');
         var dropLabel = document.getElementById('dropLabel');
-        var hintText  = document.getElementById('hintText');
 
-        var currentMode = 'png'; // 'png' ou 'json'
-        var fileData    = null;
-        var fileType    = null; // 'image' ou 'json'
+        var parsedData = null;
 
-        function switchTab(mode) {
-            currentMode = mode;
-            document.getElementById('tabPng').className  = 'tab' + (mode === 'png'  ? ' active' : '');
-            document.getElementById('tabJson').className = 'tab' + (mode === 'json' ? ' active' : '');
-
-            if (mode === 'png') {
-                fileInput.accept = '.png';
-                dropIcon.textContent  = '🖼️';
-                dropLabel.innerHTML   = 'Arraste o arquivo PNG aqui<br /><small>ou clique para selecionar</small>';
-                hintText.textContent  = 'Screenshot gerado pela extensão Chrome → importa como frame de imagem fiel ao site';
-            } else {
-                fileInput.accept = '.json';
-                dropIcon.textContent  = '📂';
-                dropLabel.innerHTML   = 'Arraste o arquivo JSON aqui<br /><small>ou clique para selecionar</small>';
-                hintText.textContent  = 'JSON gerado pela extensão → importa como nós editáveis (experimental)';
-            }
-
-            // Resetar estado
-            fileData = null;
-            fileType = null;
-            btnImport.disabled = true;
-            setStatus('Aguardando arquivo...');
-        }
-
-        // Clique na drop zone abre o seletor de arquivo
         dropZone.addEventListener('click', function() { fileInput.click(); });
 
-        // Drag & drop visual
         dropZone.addEventListener('dragover', function(e) {
             e.preventDefault();
             dropZone.classList.add('drag-over');
@@ -176,69 +113,36 @@
         });
 
         function readFile(file) {
-            var isPng  = file.name.toLowerCase().endsWith('.png') || file.type === 'image/png';
-            var isJson = file.name.toLowerCase().endsWith('.json');
-
-            if (!isPng && !isJson) {
-                setStatus('Arquivo inválido. Use .png ou .json.', 'error');
+            if (!file.name.endsWith('.json')) {
+                setStatus('Arquivo inválido. Use um .json gerado pela extensão.', 'error');
                 return;
             }
-
-            if (isPng) {
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    fileData = e.target.result; // ArrayBuffer
-                    fileType = 'image';
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    parsedData = JSON.parse(e.target.result);
                     dropLabel.innerHTML = '✓ <strong>' + file.name + '</strong><br/><small>' + (file.size / 1024).toFixed(1) + ' KB</small>';
-                    btnImport.disabled  = false;
-                    setStatus('Screenshot carregado: ' + file.name, 'success');
-                };
-                reader.readAsArrayBuffer(file);
-                return;
-            }
-
-            if (isJson) {
-                var reader2 = new FileReader();
-                reader2.onload = function(e) {
-                    try {
-                        fileData = JSON.parse(e.target.result);
-                        fileType = 'json';
-                        dropLabel.innerHTML = '✓ <strong>' + file.name + '</strong><br/><small>' + (file.size / 1024).toFixed(1) + ' KB</small>';
-                        btnImport.disabled  = false;
-                        setStatus('JSON carregado: ' + (fileData.meta ? fileData.meta.title : file.name), 'success');
-                    } catch (err) {
-                        setStatus('Erro ao ler o JSON.', 'error');
-                    }
-                };
-                reader2.readAsText(file);
-            }
+                    btnImport.disabled = false;
+                    setStatus('Arquivo carregado: ' + (parsedData.meta ? parsedData.meta.title : file.name), 'success');
+                } catch (err) {
+                    setStatus('Erro ao ler o arquivo JSON.', 'error');
+                }
+            };
+            reader.readAsText(file);
         }
 
         btnImport.addEventListener('click', function() {
-            if (!fileData) return;
+            if (!parsedData) return;
             btnImport.disabled = true;
             setStatus('Importando para o Figma...', 'loading');
-
-            if (fileType === 'image') {
-                parent.postMessage({ pluginMessage: {
-                    type:  'import_image',
-                    bytes: fileData
-                }}, '*');
-            } else {
-                parent.postMessage({ pluginMessage: {
-                    type: 'import',
-                    data: fileData
-                }}, '*');
-            }
+            parent.postMessage({ pluginMessage: { type: 'import', data: parsedData } }, '*');
         });
 
-        // Resposta do code.js
         window.onmessage = function(event) {
             var msg = event.data.pluginMessage;
             if (!msg) return;
-
             if (msg.type === 'done') {
-                setStatus('✓ Importado com sucesso!', 'success');
+                setStatus('✓ ' + msg.count + ' nós criados com sucesso!', 'success');
                 btnImport.disabled = false;
             }
             if (msg.type === 'error') {
@@ -249,7 +153,7 @@
 
         function setStatus(text, type) {
             statusEl.textContent = text;
-            statusEl.className   = 'status' + (type ? ' ' + type : '');
+            statusEl.className = 'status' + (type ? ' ' + type : '');
         }
     </script>
 </body>
