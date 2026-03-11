@@ -1,9 +1,46 @@
 // Plugin Figma — code.js
 // Suporta o formato BuilderIO/html-to-figma E o formato do nosso capturador próprio
 
-figma.showUI(__html__, { width: 320, height: 280, title: 'html2figma' });
+figma.showUI(__html__, { width: 340, height: 300, title: 'html2figma' });
 
 figma.ui.onmessage = function (msg) {
+    // ── Importar screenshot PNG ────────────────────────────────────────────────
+    if (msg.type === 'import_image') {
+        try {
+            var bytes  = new Uint8Array(msg.bytes);
+            var image  = figma.createImage(bytes);
+            var frame  = figma.createFrame();
+            frame.name = 'Página Capturada';
+            frame.x    = Math.round(figma.viewport.bounds.x + 100);
+            frame.y    = Math.round(figma.viewport.bounds.y + 100);
+
+            // Lê as dimensões reais da imagem
+            var imgSize = image.getSizeAsync
+                ? image.getSizeAsync()
+                : Promise.resolve({ width: 1440, height: 900 });
+
+            imgSize.then(function(size) {
+                frame.resize(size.width || 1440, size.height || 900);
+                frame.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' }];
+                frame.clipsContent = true;
+                figma.currentPage.appendChild(frame);
+                figma.viewport.scrollAndZoomIntoView([frame]);
+                figma.ui.postMessage({ type: 'done' });
+            }).catch(function() {
+                // Fallback sem dimensões
+                frame.resize(1440, 900);
+                frame.fills = [{ type: 'IMAGE', imageHash: image.hash, scaleMode: 'FILL' }];
+                figma.currentPage.appendChild(frame);
+                figma.viewport.scrollAndZoomIntoView([frame]);
+                figma.ui.postMessage({ type: 'done' });
+            });
+        } catch (err) {
+            figma.ui.postMessage({ type: 'error', error: String(err) });
+        }
+        return;
+    }
+
+    // ── Importar JSON (nós editáveis) ─────────────────────────────────────────
     if (msg.type !== 'import') return;
     run(msg.data).catch(function (err) {
         figma.ui.postMessage({ type: 'error', error: String(err) });
@@ -132,34 +169,48 @@ async function loadFont(family, style) {
 async function buildText(layer) {
     var text = figma.createText();
 
+    // 1. Carrega Inter como base garantida
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+
+    // 2. Posição
+    text.name = layer.name || 'text';
+    text.x    = Math.round(num(layer.x, 0));
+    text.y    = Math.round(num(layer.y, 0));
+
+    // 3. Define o conteúdo com a fonte padrão já carregada
+    var chars = String(layer.characters || layer.value || layer.text || '');
+    text.characters = chars;
+    if (!chars) return text;
+
+    // 4. Tenta aplicar a fonte original via range API
     var raw    = layer.fontFamily || 'Inter';
     var family = raw.split(',')[0].trim().replace(/['"]/g, '') || 'Inter';
     var weight = parseInt(layer.fontWeight || 400) || 400;
     var style  = weight >= 700 ? 'Bold' : weight >= 600 ? 'SemiBold' : weight >= 500 ? 'Medium' : 'Regular';
 
-    var usedFamily = await loadFont(family, style);
+    var loaded = { family: 'Inter', style: 'Regular' };
+    var candidates = [
+        { family: family, style: style },
+        { family: family, style: 'Regular' },
+        { family: 'Inter', style: style },
+        { family: 'Inter', style: 'Regular' }
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+        try { await figma.loadFontAsync(candidates[i]); loaded = candidates[i]; break; } catch(e) {}
+    }
 
-    // Posição
-    text.name = layer.name || 'text';
-    text.x    = Math.round(num(layer.x, 0));
-    text.y    = Math.round(num(layer.y, 0));
+    // 5. Aplica fonte e tamanho via range (mais estável que os setters globais)
+    try { text.setRangeFontName(0, chars.length, loaded); } catch(e) {}
+    try { text.setRangeFontSize(0, chars.length, num(layer.fontSize, 14)); } catch(e) {}
 
-    // Conteúdo — deve ser definido APÓS carregar a fonte
-    text.characters = String(layer.characters || layer.value || layer.text || '');
-    text.fontSize   = num(layer.fontSize, 14);
-    text.fontName   = { family: usedFamily, style: style };
-
-    // Opacidade
+    // 6. Opacidade
     if (layer.opacity != null) text.opacity = Math.min(1, Math.max(0, num(layer.opacity, 1)));
 
-    // Cor — usa fills do BuilderIO ou color do nosso formato
+    // 7. Cor
     var color = null;
-    if (layer.fills && layer.fills.length) {
-        color = resolveColor(layer.fills[0].color || layer.fills[0]);
-    }
+    if (layer.fills && layer.fills.length) color = resolveColor(layer.fills[0].color || layer.fills[0]);
     if (!color) color = resolveColor(layer.color);
-    if (!color) color = { r: 0.1, g: 0.1, b: 0.1 }; // fallback: cinza escuro legível
-
+    if (!color) color = { r: 0.1, g: 0.1, b: 0.1 };
     text.fills = [{ type: 'SOLID', color: color }];
 
     return text;

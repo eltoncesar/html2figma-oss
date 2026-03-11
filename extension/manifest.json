@@ -5,6 +5,7 @@
     "description": "Capture any website and import as editable Figma nodes. Free and open source.",
     "permissions": [
         "activeTab",
+        "tabs",
         "scripting",
         "storage",
         "downloads"
