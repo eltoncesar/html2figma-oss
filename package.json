@@ -6,9 +6,6 @@
     "scripts": {
         "build": "node build.js"
     },
-    "dependencies": {
-        "@builder.io/html-to-figma": "0.0.5-3"
-    },
     "devDependencies": {
         "esbuild": "^0.20.0"
     }
